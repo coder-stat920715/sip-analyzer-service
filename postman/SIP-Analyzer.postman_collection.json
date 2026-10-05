@@ -1,0 +1,1654 @@
+{
+  "info": {
+    "name": "SIP Analyzer Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "End-to-end test suite for sip-analyzer-service.\n\n## How to run, step by step\n1. Start the service: `mvn spring-boot:run` (port 8080).\n2. Import this collection and `SIP-Analyzer.postman_environment.json`; select the *SIP Analyzer - Local* environment.\n3. Run **0.1** to confirm connectivity.\n4. Open the collection **Runner**, keep the default order, click *Run*. Expect all tests green.\n5. Or from a terminal: `newman run SIP-Analyzer.postman_collection.json -e SIP-Analyzer.postman_environment.json`.\n\nEach request's *Description* explains what it checks and the expected numbers; the *Tests* tab holds the assertions."
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response time < 3000 ms', () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+          "pm.test('Content-Type is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('json'));"
+        ]
+      }
+    },
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// no-op: variables baseUrl and rollingBody are defined at collection level"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "rollingBody",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Smoke Test",
+      "description": "Confirm the service is running before running anything else.",
+      "item": [
+        {
+          "name": "0.1 OpenAPI docs reachable",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('OpenAPI 3 document', () => pm.expect(j.openapi).to.match(/^3\\./));",
+                  "pm.test('All 6 POST endpoints documented', () => {",
+                  "  const paths = Object.keys(j.paths);",
+                  "  ['/api/v1/sip/projection','/api/v1/sip/step-up','/api/v1/returns/rolling','/api/v1/benchmark/active-vs-passive','/api/v1/risk/metrics','/api/v1/goals/glide-path'].forEach(p => pm.expect(paths).to.include(p));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/api-docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "api-docs"
+              ]
+            },
+            "description": "**Step 1:** Start the app: `mvn spring-boot:run`.\n**Step 2:** Send this GET request.\n**Step 3:** Expect **200** and an OpenAPI JSON listing all 6 endpoints.\n\nIf it fails with *Could not get response*, the service is not running on `{{baseUrl}}`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. SIP Projection",
+      "description": "Module 1: M = P x ((1+i)^n - 1)/i x (1+i).",
+      "item": [
+        {
+          "name": "1.1 Projection - 10,000/month, 12%, 10 years",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('10 yearly rows', () => pm.expect(j.yearlySchedule.length).to.eql(10));",
+                  "pm.test('Default milestones 5/10/15/20', () => pm.expect(j.milestones.map(m => m.year)).to.eql([5,10,15,20]));",
+                  "pm.test('Year-10 corpus ~ 2323390.76', () => pm.expect(j.yearlySchedule[9].finalCorpus).to.be.closeTo(2323390.76, 1));",
+                  "pm.test('Year-10 invested = 1,200,000', () => pm.expect(j.yearlySchedule[9].totalInvested).to.eql(1200000));",
+                  "pm.test('Milestone 5y ~ 824863.67', () => pm.expect(j.milestones[0].finalCorpus).to.be.closeTo(824863.67, 1));",
+                  "pm.test('Milestone 15y ~ 5045760.00', () => pm.expect(j.milestones[2].finalCorpus).to.be.closeTo(5045760.00, 1));",
+                  "pm.test('Milestone 20y ~ 9991479.19', () => pm.expect(j.milestones[3].finalCorpus).to.be.closeTo(9991479.19, 1));",
+                  "pm.test('corpus = invested + gain for every row', () => j.yearlySchedule.forEach(r => pm.expect(r.finalCorpus).to.be.closeTo(r.totalInvested + r.wealthGain, 0.02)));",
+                  "pm.test('Corpus strictly increasing', () => { for (let i=1;i<j.yearlySchedule.length;i++) pm.expect(j.yearlySchedule[i].finalCorpus).to.be.above(j.yearlySchedule[i-1].finalCorpus); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/projection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "projection"
+              ]
+            },
+            "description": "**Step 1:** Send the request (monthly SIP 10,000, 12% CAGR, 10 years).\n**Step 2:** Check status is **200**.\n**Step 3:** `yearlySchedule` must contain 10 rows (year 1..10).\n**Step 4:** `milestones` defaults to years 5, 10, 15, 20.\n**Step 5:** Year-10 corpus must be about **2,323,390.76** (hand-calculated: 10000 x 230.0387 x 1.01); total invested 1,200,000.\n**Step 6:** Every row must satisfy `finalCorpus = totalInvested + wealthGain`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"annualReturnPercent\": 12,\n  \"years\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "1.2 Projection - custom milestones (7, 12, 25)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Milestones sorted & unique', () => pm.expect(j.milestones.map(m => m.year)).to.eql([7,12,25]));",
+                  "pm.test('Schedule has 3 rows', () => pm.expect(j.yearlySchedule.length).to.eql(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/projection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "projection"
+              ]
+            },
+            "description": "**Step 1:** Send the request; milestones are deliberately unsorted with a duplicate.\n**Step 2:** Expect **200**.\n**Step 3:** `milestones` must be de-duplicated and sorted: 7, 12, 25 (independent of `years`=3).\n**Step 4:** `yearlySchedule` has only 3 rows.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 5000,\n  \"annualReturnPercent\": 14,\n  \"years\": 3,\n  \"milestoneYears\": [\n    25,\n    7,\n    12,\n    7\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "1.3 Projection - 0% return equals simple sum",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().yearlySchedule[1];",
+                  "pm.test('Corpus 120000', () => pm.expect(r.finalCorpus).to.eql(120000));",
+                  "pm.test('Gain 0', () => pm.expect(r.wealthGain).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/projection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "projection"
+              ]
+            },
+            "description": "**Step 1:** Send with 0% return (division-by-zero edge case in the formula).\n**Step 2:** Expect **200**; year-2 corpus = 5000 x 24 = **120,000** and wealthGain = 0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 5000,\n  \"annualReturnPercent\": 0,\n  \"years\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "1.4 Projection - validation error (years = 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const j = pm.response.json();",
+                  "pm.test('Title is Validation error', () => pm.expect(j.title).to.eql('Validation error'));",
+                  "pm.test('errors.years present', () => pm.expect(j.errors).to.have.property('years'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/projection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "projection"
+              ]
+            },
+            "description": "**Step 1:** Send with `years: 0`.\n**Step 2:** Expect **400** with `errors.years` populated (Bean Validation).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"annualReturnPercent\": 12,\n  \"years\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Step-Up SIP",
+      "description": "Module 2: Standard vs annual step-up SIP.",
+      "item": [
+        {
+          "name": "2.1 Step-up 10% - 20 years",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Standard corpus ~ 9991479.19', () => pm.expect(j.standard.finalCorpus).to.be.closeTo(9991479.19, 1));",
+                  "pm.test('Step-up corpus ~ 19888715.49', () => pm.expect(j.stepUp.finalCorpus).to.be.closeTo(19888715.49, 2));",
+                  "pm.test('Step-up invested ~ 6872999.94', () => pm.expect(j.stepUp.totalInvested).to.be.closeTo(6872999.94, 1));",
+                  "pm.test('Step-up beats standard', () => pm.expect(j.stepUp.finalCorpus).to.be.above(j.standard.finalCorpus));",
+                  "pm.test('SIP steps 10000 -> 11000 -> 12100', () => { pm.expect(j.stepUpSchedule[0].monthlySip).to.eql(10000); pm.expect(j.stepUpSchedule[1].monthlySip).to.eql(11000); pm.expect(j.stepUpSchedule[2].monthlySip).to.eql(12100); });",
+                  "pm.test('Schedules have 20 rows', () => { pm.expect(j.standardSchedule.length).to.eql(20); pm.expect(j.stepUpSchedule.length).to.eql(20); });",
+                  "pm.test('delta.additionalCorpus = stepUp - standard', () => pm.expect(j.delta.additionalCorpus).to.be.closeTo(j.stepUp.finalCorpus - j.standard.finalCorpus, 0.02));",
+                  "pm.test('delta.additionalInvestment = stepUp - standard', () => pm.expect(j.delta.additionalInvestment).to.be.closeTo(j.stepUp.totalInvested - j.standard.totalInvested, 0.02));",
+                  "pm.test('Uplift % positive', () => pm.expect(j.delta.corpusUpliftPercent).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/step-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "step-up"
+              ]
+            },
+            "description": "**Step 1:** Send (10,000/month, 12%, 20y, +10% each year).\n**Step 2:** Expect **200**.\n**Step 3:** Standard corpus ~ **9,991,479.19**; step-up corpus ~ **19,888,715.49**; step-up invested ~ **6,872,999.94**.\n**Step 4:** Year 2 monthly SIP in `stepUpSchedule` = 11,000 and year 3 = 12,100.\n**Step 5:** `delta` values must equal step-up minus standard.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"annualReturnPercent\": 12,\n  \"years\": 20,\n  \"stepUpPercent\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "2.2 Step-up 0% must equal standard SIP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Corpus identical (within 0.1)', () => pm.expect(j.delta.additionalCorpus).to.be.closeTo(0, 0.1));",
+                  "pm.test('No extra investment', () => pm.expect(j.delta.additionalInvestment).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/step-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "step-up"
+              ]
+            },
+            "description": "**Step 1:** Send with `stepUpPercent: 0` - the simulation engine must reproduce the closed-form formula.\n**Step 2:** Expect **200**; `delta.additionalCorpus` ~ 0 and `additionalInvestment` = 0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"annualReturnPercent\": 12,\n  \"years\": 10,\n  \"stepUpPercent\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "2.3 Step-up - validation error (missing stepUpPercent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('errors.stepUpPercent present', () => pm.expect(pm.response.json().errors).to.have.property('stepUpPercent'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/step-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "step-up"
+              ]
+            },
+            "description": "**Step 1:** Omit `stepUpPercent`.\n**Step 2:** Expect **400** with `errors.stepUpPercent`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"annualReturnPercent\": 12,\n  \"years\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Rolling Returns",
+      "description": "Module 3. NAV series are generated by each request's **Pre-request Script** (73 monthly points, 2018-01-01 to 2024-01-01), so no data file is needed.",
+      "item": [
+        {
+          "name": "3.1 Rolling 3y & 5y vs benchmark (fund 1%/m, benchmark 0.5%/m)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const w3 = j.rollingWindows.find(w => w.windowYears === 3), w5 = j.rollingWindows.find(w => w.windowYears === 5);",
+                  "pm.test('3y: 37 observations', () => pm.expect(w3.observations).to.eql(37));",
+                  "pm.test('3y: avg ~ 12.68%', () => pm.expect(w3.averageReturnPercent).to.be.closeTo(12.68, 0.05));",
+                  "pm.test('3y: 100% outperform benchmark', () => pm.expect(w3.percentOutperformingBenchmark).to.eql(100));",
+                  "pm.test('3y: 37 compared observations', () => pm.expect(w3.benchmarkComparedObservations).to.eql(37));",
+                  "pm.test('3y: benchmark avg ~ 6.17%', () => pm.expect(w3.averageBenchmarkReturnPercent).to.be.closeTo(6.17, 0.05));",
+                  "pm.test('5y: 13 observations', () => pm.expect(w5.observations).to.eql(13));",
+                  "pm.test('All periods positive', () => pm.expect(w3.percentPositivePeriods).to.eql(100));",
+                  "pm.test('Max drawdown 0', () => pm.expect(j.fundMaxDrawdown.maxDrawdownPercent).to.eql(0));",
+                  "pm.test('Trailing 1y/3y/5y only', () => pm.expect(j.trailingReturns.map(t => t.years)).to.eql([1,3,5]));",
+                  "pm.test('asOf = 2024-01-01', () => pm.expect(j.asOf).to.eql('2024-01-01'));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generates 73 month-start NAV points from 2018-01-01 to 2024-01-01.",
+                  "const gen = (growth, crashAt) => {",
+                  "  const pts = []; let nav = 100;",
+                  "  for (let k = 0; k <= 72; k++) {",
+                  "    if (k > 0) nav = (crashAt && k === crashAt) ? nav * 0.6 : nav * (1 + growth);  // 0.6 = -40% shock",
+                  "    const d = new Date(Date.UTC(2018, k, 1));",
+                  "    pts.push({ date: d.toISOString().slice(0, 10), nav: Number(nav.toFixed(6)) });",
+                  "  }",
+                  "  return pts;",
+                  "};",
+                  "pm.collectionVariables.set('rollingBody', JSON.stringify({ fundNavs: gen(0.01), benchmarkNavs: gen(0.005), windowYears: [3, 5] }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns/rolling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns",
+                "rolling"
+              ]
+            },
+            "description": "**Step 1:** Open the **Pre-request Script** tab - it builds a fund series growing 1%/month and a benchmark growing 0.5%/month and stores the JSON in collection variable `rollingBody`.\n**Step 2:** Send the request (body is `{{rollingBody}}`).\n**Step 3:** Expect **200**.\n**Step 4:** 3y window: **37** observations, average ~ 12.68% ((1.01^12 - 1) x 100), 100% outperform benchmark. 5y window: **13** observations.\n**Step 5:** Max drawdown is 0 (monotonic series). Trailing returns for 1y, 3y, 5y present (7y/10y absent - history too short).",
+            "body": {
+              "mode": "raw",
+              "raw": "{{rollingBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3.2 Max drawdown - 40% crash, no recovery",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('MDD = -40%', () => pm.expect(j.fundMaxDrawdown.maxDrawdownPercent).to.be.closeTo(-40, 0.01));",
+                  "pm.test('Peak 2021-01-01', () => pm.expect(j.fundMaxDrawdown.peakDate).to.eql('2021-01-01'));",
+                  "pm.test('Trough 2021-02-01', () => pm.expect(j.fundMaxDrawdown.troughDate).to.eql('2021-02-01'));",
+                  "pm.test('Not recovered', () => pm.expect(j.fundMaxDrawdown.recoveryDate).to.be.null);",
+                  "pm.test('No benchmark data returned', () => { pm.expect(j.benchmarkMaxDrawdown).to.be.null; pm.expect(j.rollingWindows[0].percentOutperformingBenchmark).to.be.null; });",
+                  "pm.test('Some 3y rolling periods are negative', () => pm.expect(j.rollingWindows[0].minReturnPercent).to.be.below(j.rollingWindows[0].maxReturnPercent));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generates 73 month-start NAV points from 2018-01-01 to 2024-01-01.",
+                  "const gen = (growth, crashAt) => {",
+                  "  const pts = []; let nav = 100;",
+                  "  for (let k = 0; k <= 72; k++) {",
+                  "    if (k > 0) nav = (crashAt && k === crashAt) ? nav * 0.6 : nav * (1 + growth);  // 0.6 = -40% shock",
+                  "    const d = new Date(Date.UTC(2018, k, 1));",
+                  "    pts.push({ date: d.toISOString().slice(0, 10), nav: Number(nav.toFixed(6)) });",
+                  "  }",
+                  "  return pts;",
+                  "};",
+                  "pm.collectionVariables.set('rollingBody', JSON.stringify({ fundNavs: gen(0.01, 37), windowYears: [3] }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns/rolling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns",
+                "rolling"
+              ]
+            },
+            "description": "**Step 1:** Pre-request Script builds a fund that grows 1%/month, drops **40%** at month 37 (2021-02-01) and resumes 1%/month; no benchmark is sent.\n**Step 2:** Send the request.\n**Step 3:** Expect `fundMaxDrawdown.maxDrawdownPercent` = **-40**, peakDate **2021-01-01**, troughDate **2021-02-01**.\n**Step 4:** `recoveryDate` is **null** (only 35 months of recovery data; ~52 needed).\n**Step 5:** `benchmarkMaxDrawdown` is null and window benchmark fields are null.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{rollingBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3.3 History too short for a 10y window",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const w = pm.response.json().rollingWindows[0];",
+                  "pm.test('0 observations', () => pm.expect(w.observations).to.eql(0));",
+                  "pm.test('Stats are null', () => pm.expect(w.averageReturnPercent).to.be.null);"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generates 73 month-start NAV points from 2018-01-01 to 2024-01-01.",
+                  "const gen = (growth, crashAt) => {",
+                  "  const pts = []; let nav = 100;",
+                  "  for (let k = 0; k <= 72; k++) {",
+                  "    if (k > 0) nav = (crashAt && k === crashAt) ? nav * 0.6 : nav * (1 + growth);  // 0.6 = -40% shock",
+                  "    const d = new Date(Date.UTC(2018, k, 1));",
+                  "    pts.push({ date: d.toISOString().slice(0, 10), nav: Number(nav.toFixed(6)) });",
+                  "  }",
+                  "  return pts;",
+                  "};",
+                  "pm.collectionVariables.set('rollingBody', JSON.stringify({ fundNavs: gen(0.01), windowYears: [10] }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns/rolling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns",
+                "rolling"
+              ]
+            },
+            "description": "**Step 1:** Re-uses the 6-year series but asks for a 10-year window.\n**Step 2:** Expect **200**; the window has `observations: 0` and null statistics (no error).",
+            "body": {
+              "mode": "raw",
+              "raw": "{{rollingBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3.4 Rolling - validation error (single NAV point)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('errors.fundNavs present', () => pm.expect(pm.response.json().errors).to.have.property('fundNavs'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns/rolling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns",
+                "rolling"
+              ]
+            },
+            "description": "**Step 1:** Send only one NAV point.\n**Step 2:** Expect **400** with `errors.fundNavs` (min size 2).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundNavs\": [\n    {\n      \"date\": \"2020-01-01\",\n      \"nav\": 100\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Active vs Passive",
+      "description": "Module 4. Net return = gross - TER. Defaults: active TER 0.70, passive TER 0.20, horizons 10/15/20.",
+      "item": [
+        {
+          "name": "4.1 Breakeven - active needs +0.5% gross alpha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Net returns 13.8 / 13.8', () => { pm.expect(j.activeNetReturnPercent).to.eql(13.8); pm.expect(j.passiveNetReturnPercent).to.eql(13.8); });",
+                  "pm.test('Net alpha 0', () => pm.expect(j.netAlphaPercent).to.eql(0));",
+                  "pm.test('Breakeven 0.5', () => pm.expect(j.breakEvenGrossOutperformancePercent).to.eql(0.5));",
+                  "pm.test('Default horizons 10/15/20', () => pm.expect(j.horizons.map(h => h.years)).to.eql([10,15,20]));",
+                  "pm.test('All TIE', () => j.horizons.forEach(h => pm.expect(h.winner).to.eql('TIE')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/benchmark/active-vs-passive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "benchmark",
+                "active-vs-passive"
+              ]
+            },
+            "description": "**Step 1:** Active gross 14.5% vs passive gross 14.0% with default TERs.\n**Step 2:** Net returns: 14.5-0.7 = **13.8**, 14.0-0.2 = **13.8** -> net alpha 0.\n**Step 3:** `breakEvenGrossOutperformancePercent` = **0.5**; all three horizons are **TIE**.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"activeGrossReturnPercent\": 14.5,\n  \"passiveGrossReturnPercent\": 14.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4.2 Equal gross returns - passive wins on cost",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('PASSIVE wins all', () => j.horizons.forEach(h => pm.expect(h.winner).to.eql('PASSIVE')));",
+                  "pm.test('Net alpha -0.5', () => pm.expect(j.netAlphaPercent).to.eql(-0.5));",
+                  "pm.test('Gap widens with time', () => pm.expect(j.horizons[2].corpusDifference).to.be.below(j.horizons[0].corpusDifference));",
+                  "pm.test('Active drag > passive drag', () => j.horizons.forEach(h => pm.expect(h.activeExpenseDrag).to.be.above(h.passiveExpenseDrag)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/benchmark/active-vs-passive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "benchmark",
+                "active-vs-passive"
+              ]
+            },
+            "description": "**Step 1:** Both gross 14%.\n**Step 2:** Active net 13.3% < passive net 13.8%; passive wins every horizon.\n**Step 3:** `corpusDifference` (active - passive) is negative and grows larger with horizon; `activeExpenseDrag` > `passiveExpenseDrag`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"activeGrossReturnPercent\": 14.0,\n  \"passiveGrossReturnPercent\": 14.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4.3 High-conviction midcap - active wins (16% vs 14%)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Net alpha 1.5', () => pm.expect(j.netAlphaPercent).to.eql(1.5));",
+                  "pm.test('ACTIVE wins all', () => j.horizons.forEach(h => pm.expect(h.winner).to.eql('ACTIVE')));",
+                  "pm.test('20y difference > 10y difference', () => pm.expect(j.horizons[2].corpusDifference).to.be.above(j.horizons[0].corpusDifference));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/benchmark/active-vs-passive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "benchmark",
+                "active-vs-passive"
+              ]
+            },
+            "description": "**Step 1:** Active gross 16% vs passive 14%.\n**Step 2:** Net alpha = 15.3 - 13.8 = **1.5%**; ACTIVE wins and the 20y corpus gap is the largest.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"activeGrossReturnPercent\": 16.0,\n  \"passiveGrossReturnPercent\": 14.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4.4 Custom TER and horizons",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Horizons sorted 8,12', () => pm.expect(j.horizons.map(h => h.years)).to.eql([8,12]));",
+                  "pm.test('TERs echoed', () => { pm.expect(j.activeTerPercent).to.eql(1); pm.expect(j.passiveTerPercent).to.eql(0.1); });",
+                  "pm.test('Breakeven 0.9', () => pm.expect(j.breakEvenGrossOutperformancePercent).to.eql(0.9));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/benchmark/active-vs-passive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "benchmark",
+                "active-vs-passive"
+              ]
+            },
+            "description": "**Step 1:** Override TERs (active 1.0, passive 0.1) and horizons [12, 8].\n**Step 2:** Horizons are returned sorted (8, 12) and TERs echoed back.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"activeGrossReturnPercent\": 15.0,\n  \"passiveGrossReturnPercent\": 13.0,\n  \"activeTerPercent\": 1.0,\n  \"passiveTerPercent\": 0.1,\n  \"horizonYears\": [\n    12,\n    8\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Risk Metrics",
+      "description": "Module 5. Periodic returns are in PERCENT. Fund = exactly 2x benchmark so beta must be 2.0.",
+      "item": [
+        {
+          "name": "5.1 Leveraged fund (fund = 2 x benchmark) - beta 2.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Beta = 2', () => pm.expect(j.beta).to.be.closeTo(2.0, 0.0001));",
+                  "pm.test('Observations 12, 12 periods/yr', () => { pm.expect(j.observations).to.eql(12); pm.expect(j.periodsPerYear).to.eql(12); });",
+                  "pm.test('Default Rf 6.5', () => pm.expect(j.riskFreeRatePercent).to.eql(6.5));",
+                  "pm.test('Fund vol ~ 2x benchmark vol', () => pm.expect(j.annualizedVolatilityPercent).to.be.closeTo(2 * j.benchmarkVolatilityPercent, 0.05));",
+                  "pm.test('Sharpe consistent', () => pm.expect(j.sharpeRatio).to.be.closeTo((j.annualizedFundReturnPercent - j.riskFreeRatePercent) / j.annualizedVolatilityPercent, 0.01));",
+                  "pm.test('Excess return = fund - benchmark', () => pm.expect(j.excessReturnPercent).to.be.closeTo(j.annualizedFundReturnPercent - j.annualizedBenchmarkReturnPercent, 0.02));",
+                  "pm.test('Jensen alpha present', () => pm.expect(j.jensensAlphaPercent).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/risk/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "metrics"
+              ]
+            },
+            "description": "**Step 1:** Send 12 monthly returns; the fund series is exactly twice the benchmark series.\n**Step 2:** Expect **200**.\n**Step 3:** `beta` = **2.0** (Cov/Var), `observations` = 12, `riskFreeRatePercent` = **6.5** (default from application.yml).\n**Step 4:** Fund volatility ~ 2 x benchmark volatility.\n**Step 5:** `sharpeRatio` = (annualised return - 6.5%) / volatility - verified in the script.\n**Step 6:** Jensen's alpha is returned as a number.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundReturns\": [\n    2.0,\n    -4.0,\n    6.0,\n    3.0,\n    -2.0,\n    4.0,\n    1.0,\n    -1.0,\n    2.4,\n    1.6,\n    -3.0,\n    5.0\n  ],\n  \"benchmarkReturns\": [\n    1.0,\n    -2.0,\n    3.0,\n    1.5,\n    -1.0,\n    2.0,\n    0.5,\n    -0.5,\n    1.2,\n    0.8,\n    -1.5,\n    2.5\n  ],\n  \"periodsPerYear\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5.2 Identical series - beta 1, alpha 0, custom Rf",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Beta 1', () => pm.expect(j.beta).to.eql(1));",
+                  "pm.test('Alpha 0', () => pm.expect(j.jensensAlphaPercent).to.be.closeTo(0, 0.01));",
+                  "pm.test('Excess 0', () => pm.expect(j.excessReturnPercent).to.eql(0));",
+                  "pm.test('Rf 7', () => pm.expect(j.riskFreeRatePercent).to.eql(7));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/risk/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "metrics"
+              ]
+            },
+            "description": "**Step 1:** Fund = benchmark and Rf overridden to 7%.\n**Step 2:** Expect beta **1.0**, excess return **0**, Jensen's alpha **0**, and `riskFreeRatePercent` **7.0**.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundReturns\": [\n    1.0,\n    -2.0,\n    3.0,\n    1.5,\n    -1.0,\n    2.0,\n    0.5,\n    -0.5,\n    1.2,\n    0.8,\n    -1.5,\n    2.5\n  ],\n  \"benchmarkReturns\": [\n    1.0,\n    -2.0,\n    3.0,\n    1.5,\n    -1.0,\n    2.0,\n    0.5,\n    -0.5,\n    1.2,\n    0.8,\n    -1.5,\n    2.5\n  ],\n  \"periodsPerYear\": 12,\n  \"riskFreeRatePercent\": 7.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5.3 Mismatched lengths -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Invalid input', () => pm.expect(pm.response.json().title).to.eql('Invalid input'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/risk/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "metrics"
+              ]
+            },
+            "description": "**Step 1:** Fund has 4 points, benchmark 3.\n**Step 2:** Expect **400**, title *Invalid input*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundReturns\": [\n    1,\n    2,\n    3,\n    4\n  ],\n  \"benchmarkReturns\": [\n    1,\n    2,\n    3\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5.4 Zero-variance benchmark -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mentions zero variance', () => pm.expect(pm.response.json().detail).to.include('zero variance'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/risk/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "metrics"
+              ]
+            },
+            "description": "**Step 1:** Benchmark returns are constant, so variance = 0 and beta is undefined.\n**Step 2:** Expect **400** with a message mentioning *zero variance*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundReturns\": [\n    1,\n    2,\n    3\n  ],\n  \"benchmarkReturns\": [\n    1,\n    1,\n    1\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5.5 Return <= -100% -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/risk/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "risk",
+                "metrics"
+              ]
+            },
+            "description": "**Step 1:** One fund return is -100% (total loss), which makes log-returns undefined.\n**Step 2:** Expect **400** *Invalid input*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundReturns\": [\n    1,\n    -100,\n    3\n  ],\n  \"benchmarkReturns\": [\n    1,\n    2,\n    3\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Glide Path (STP)",
+      "description": "Module 6. Equity is moved to debt in equal monthly STP instalments during the final X years.",
+      "item": [
+        {
+          "name": "6.1 15y goal, 3y glide, 30% crash 12 months before goal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('15 yearly points', () => pm.expect(j.glideSchedule.length).to.eql(15));",
+                  "pm.test('Year 1 is 100% equity, ACCUMULATION', () => { pm.expect(j.glideSchedule[0].equityAllocationPercent).to.eql(100); pm.expect(j.glideSchedule[0].phase).to.eql('ACCUMULATION'); });",
+                  "pm.test('Years 13-15 are GLIDE', () => [12,13,14].forEach(i => pm.expect(j.glideSchedule[i].phase).to.eql('GLIDE')));",
+                  "pm.test('Year 12 is last ACCUMULATION', () => pm.expect(j.glideSchedule[11].phase).to.eql('ACCUMULATION'));",
+                  "pm.test('Equity allocation falls monotonically in glide', () => { for (let i=12;i<15;i++) pm.expect(j.glideSchedule[i].equityAllocationPercent).to.be.below(j.glideSchedule[i-1].equityAllocationPercent); });",
+                  "pm.test('Year 15 equity = 0%', () => pm.expect(j.glideSchedule[14].equityAllocationPercent).to.eql(0));",
+                  "pm.test('Debt holds everything at goal', () => pm.expect(j.glideSchedule[14].equityBalance).to.eql(0));",
+                  "pm.test('Full equity wins without crash', () => { pm.expect(j.fullEquity.corpusWithoutCrash).to.be.above(j.glidePath.corpusWithoutCrash); pm.expect(j.opportunityCostWithoutCrash).to.be.above(0); });",
+                  "pm.test('Glide wins with crash', () => { pm.expect(j.glidePath.corpusWithCrash).to.be.above(j.fullEquity.corpusWithCrash); pm.expect(j.crashProtectionBenefit).to.be.above(0); });",
+                  "pm.test('Same capital invested', () => pm.expect(j.glidePath.totalInvested).to.eql(j.fullEquity.totalInvested));",
+                  "pm.test('Total invested = 1,800,000', () => pm.expect(j.glidePath.totalInvested).to.eql(1800000));",
+                  "pm.test('Crash impact is smaller for glide', () => pm.expect(j.glidePath.corpusImpactOfCrash).to.be.below(j.fullEquity.corpusImpactOfCrash));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/goals/glide-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "goals",
+                "glide-path"
+              ]
+            },
+            "description": "**Step 1:** Send the request (12% equity, 6.5% debt, 3-year glide, 30% crash 12 months before the goal).\n**Step 2:** Expect **200**.\n**Step 3:** `glideSchedule` has 15 rows: years 1-12 are ACCUMULATION at 100% equity; years 13-15 are GLIDE; year-15 equity allocation is **0%**.\n**Step 4:** Without a crash, full-equity ends higher (`opportunityCostWithoutCrash` > 0).\n**Step 5:** With the crash, glide ends higher (`crashProtectionBenefit` > 0).\n**Step 6:** Invested amounts are identical in both strategies (SIP continues).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"equityReturnPercent\": 12,\n  \"debtReturnPercent\": 6.5,\n  \"totalYears\": 15,\n  \"glideYears\": 3,\n  \"continueSipDuringGlide\": true,\n  \"marketCrashPercent\": 30,\n  \"crashMonthsBeforeGoal\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "6.2 glideYears = 0 behaves like full equity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Same corpus (no crash)', () => pm.expect(j.glidePath.corpusWithoutCrash).to.eql(j.fullEquity.corpusWithoutCrash));",
+                  "pm.test('Same corpus (crash)', () => pm.expect(j.glidePath.corpusWithCrash).to.eql(j.fullEquity.corpusWithCrash));",
+                  "pm.test('No benefit', () => pm.expect(j.crashProtectionBenefit).to.eql(0));",
+                  "pm.test('Always 100% equity', () => j.glideSchedule.forEach(p => pm.expect(p.equityAllocationPercent).to.eql(100)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/goals/glide-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "goals",
+                "glide-path"
+              ]
+            },
+            "description": "**Step 1:** Set `glideYears: 0`.\n**Step 2:** Expect **200**; glide and full-equity outcomes are identical, `crashProtectionBenefit` = 0 and the schedule stays 100% equity.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"equityReturnPercent\": 12,\n  \"debtReturnPercent\": 6.5,\n  \"totalYears\": 15,\n  \"glideYears\": 0,\n  \"continueSipDuringGlide\": true,\n  \"marketCrashPercent\": 30,\n  \"crashMonthsBeforeGoal\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "6.3 Defaults applied (only 3 mandatory fields)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('glideYears default 3', () => pm.expect(j.glideYears).to.eql(3));",
+                  "pm.test('crash default 30%', () => pm.expect(j.marketCrashPercent).to.eql(30));",
+                  "pm.test('crash months default 12', () => pm.expect(j.crashMonthsBeforeGoal).to.eql(12));",
+                  "pm.test('Schedule 10 rows', () => pm.expect(j.glideSchedule.length).to.eql(10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/goals/glide-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "goals",
+                "glide-path"
+              ]
+            },
+            "description": "**Step 1:** Send only `monthlyInvestment`, `equityReturnPercent`, `totalYears`.\n**Step 2:** Expect **200** with defaults echoed: `glideYears` 3, `marketCrashPercent` 30, `crashMonthsBeforeGoal` 12.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"equityReturnPercent\": 12,\n  \"totalYears\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "6.4 SIP stops during glide (continueSipDuringGlide = false)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Glide invested 1,440,000', () => pm.expect(j.glidePath.totalInvested).to.eql(1440000));",
+                  "pm.test('Full equity invested 1,800,000', () => pm.expect(j.fullEquity.totalInvested).to.eql(1800000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/goals/glide-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "goals",
+                "glide-path"
+              ]
+            },
+            "description": "**Step 1:** Stop new SIPs once the glide starts.\n**Step 2:** Expect **200**; glide `totalInvested` = 10000 x 12 x 12 = **1,440,000**, less than the full-equity run (1,800,000).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"equityReturnPercent\": 12,\n  \"debtReturnPercent\": 6.5,\n  \"totalYears\": 15,\n  \"glideYears\": 3,\n  \"continueSipDuringGlide\": false,\n  \"marketCrashPercent\": 30,\n  \"crashMonthsBeforeGoal\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "6.5 glideYears > totalYears -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Message', () => pm.expect(pm.response.json().detail).to.include('glideYears'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/goals/glide-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "goals",
+                "glide-path"
+              ]
+            },
+            "description": "**Step 1:** Glide window (6y) longer than horizon (5y).\n**Step 2:** Expect **400** *Invalid input*: glideYears cannot exceed totalYears.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"equityReturnPercent\": 12,\n  \"debtReturnPercent\": 6.5,\n  \"totalYears\": 5,\n  \"glideYears\": 6,\n  \"continueSipDuringGlide\": true,\n  \"marketCrashPercent\": 30,\n  \"crashMonthsBeforeGoal\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "6.6 crashMonthsBeforeGoal >= total months -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/goals/glide-path",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "goals",
+                "glide-path"
+              ]
+            },
+            "description": "**Step 1:** Crash timing 24 months before goal on a 24-month plan.\n**Step 2:** Expect **400** *Invalid input*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": 10000,\n  \"equityReturnPercent\": 12,\n  \"debtReturnPercent\": 6.5,\n  \"totalYears\": 2,\n  \"glideYears\": 1,\n  \"continueSipDuringGlide\": true,\n  \"marketCrashPercent\": 30,\n  \"crashMonthsBeforeGoal\": 24\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Global Error Handling",
+      "description": "Checks the shared exception handler.",
+      "item": [
+        {
+          "name": "7.1 Malformed JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Malformed request', () => pm.expect(pm.response.json().title).to.eql('Malformed request'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/projection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "projection"
+              ]
+            },
+            "description": "**Step 1:** Send a body that is not valid JSON.\n**Step 2:** Expect **400**, title *Malformed request*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"monthlyInvestment\": 10000, ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "7.2 Wrong field type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sip/projection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sip",
+                "projection"
+              ]
+            },
+            "description": "**Step 1:** `monthlyInvestment` is a string.\n**Step 2:** Expect **400**, title *Malformed request*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthlyInvestment\": \"abc\",\n  \"annualReturnPercent\": 12,\n  \"years\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "7.3 Bad date format in NAV",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns/rolling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns",
+                "rolling"
+              ]
+            },
+            "description": "**Step 1:** Date must be ISO `yyyy-MM-dd`.\n**Step 2:** Expect **400**.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundNavs\": [\n    {\n      \"date\": \"01-01-2020\",\n      \"nav\": 100\n    },\n    {\n      \"date\": \"2021-01-01\",\n      \"nav\": 110\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "7.4 Negative NAV rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('errors present', () => pm.expect(pm.response.json().errors).to.be.an('object'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns/rolling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns",
+                "rolling"
+              ]
+            },
+            "description": "**Step 1:** NAV must be positive.\n**Step 2:** Expect **400** with an `errors` map.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundNavs\": [\n    {\n      \"date\": \"2020-01-01\",\n      \"nav\": -5\n    },\n    {\n      \"date\": \"2021-01-01\",\n      \"nav\": 110\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

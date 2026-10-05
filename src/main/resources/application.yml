@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: sip-analyzer-service
+  jackson:
+    default-property-inclusion: always
+server:
+  port: 8080
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+analyzer:
+  risk-free-rate-percent: 6.5        # Indian 10Y G-Sec yield
+  default-active-ter-percent: 0.70   # Direct active fund TER
+  default-passive-ter-percent: 0.20  # Index fund / ETF TER
+  default-debt-return-percent: 6.5   # Liquid / short-duration debt fund CAGR
